@@ -70,7 +70,7 @@ For further assistance, please open an issue on the GitHub repository.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the Apache-2.0 license - see the LICENSE file for details.
 
 ## Additional Requirements
 
