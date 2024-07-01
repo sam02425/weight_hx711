@@ -1,96 +1,76 @@
 import numpy as np
 from scipy.optimize import curve_fit
 
+import serial
+import time
+from utils import logger
+
 class WeightPredictor:
-    def __init__(self):
-        self.model = None
+    def __init__(self, port='/dev/ttyUSB0', baudrate=9600, timeout=1):
+        try:
+            self.ser = serial.Serial(port, baudrate, timeout=timeout)
+            time.sleep(2)  # Allow time for sensor to initialize
+            logger.info(f"Connected to weight sensor on {port}")
+        except serial.SerialException as e:
+            logger.error(f"Failed to connect to weight sensor: {e}")
+            self.ser = None
 
-    def train(self, sensor_readings, actual_weights):
-        def model_func(x, a, b, c, d):
-            return a * x[0] + b * x[1] + c * x[2] + d * x[3]
+    def predict(self, num_readings=3):
+        if self.ser is None:
+            logger.error("Weight sensor not initialized. Cannot predict weight.")
+            return 0
 
-        popt, _ = curve_fit(model_func, sensor_readings.T, actual_weights)
-        self.model = lambda x: model_func(x, *popt)
+        weights = []
+        for _ in range(num_readings):
+            try:
+                self.ser.write(b'R\r\n')  # Send command to request weight
+                response = self.ser.readline().decode('utf-8').strip()
+                weight = float(response)
+                weights.append(weight)
+            except ValueError:
+                logger.warning(f"Invalid weight reading: {response}")
+            except serial.SerialException as e:
+                logger.error(f"Error communicating with weight sensor: {e}")
+                return 0
 
-    def predict(self, sensor_readings):
-        if self.model is None:
-            raise ValueError("Model not trained. Call train() first.")
-        return self.model(sensor_readings)
+        if weights:
+            return sum(weights) / len(weights)
+        else:
+            return 0
 
-    def save_model(self, filename):
-        if self.model is None:
-            raise ValueError("Model not trained. Nothing to save.")
-        np.save(filename, self.model)
+    def tare(self):
+        if self.ser is None:
+            logger.error("Weight sensor not initialized. Cannot tare.")
+            return False
 
-    def load_model(self, filename):
-        self.model = np.load(filename, allow_pickle=True).item()
+        try:
+            self.ser.write(b'T\r\n')  # Send tare command
+            response = self.ser.readline().decode('utf-8').strip()
+            if response == 'OK':
+                logger.info("Tare successful")
+                return True
+            else:
+                logger.warning(f"Tare failed: {response}")
+                return False
+        except serial.SerialException as e:
+            logger.error(f"Error communicating with weight sensor: {e}")
+            return False
+
+    def close(self):
+        if self.ser:
+            self.ser.close()
+            logger.info("Closed connection to weight sensor")
 
 def main():
-    # Example usage
     predictor = WeightPredictor()
-
-    # Generate some example data
-    sensor_readings = np.random.rand(100, 4) * 1000  # 100 samples, 4 sensors
-    actual_weights = np.sum(sensor_readings, axis=1) + np.random.randn(100) * 10  # Add some noise
-
-    # Train the model
-    predictor.train(sensor_readings, actual_weights)
-
-    # Make a prediction
-    new_reading = np.array([250, 300, 275, 225])
-    predicted_weight = predictor.predict(new_reading)
-    print(f"Predicted weight: {predicted_weight:.2f} grams")
-
-    # Save and load the model
-    predictor.save_model('weight_model.npy')
-    predictor.load_model('weight_model.npy')
+    try:
+        if predictor.tare():
+            for _ in range(5):
+                weight = predictor.predict()
+                print(f"Current weight: {weight:.2f} g")
+                time.sleep(1)
+    finally:
+        predictor.close()
 
 if __name__ == "__main__":
     main()
-
-# class WeightPredictor:
-#     def __init__(self):
-#         self.model = None
-
-#     def train(self, sensor_readings, actual_weights):
-#         def model_func(x, a, b, c, d):
-#             return a * x[0] + b * x[1] + c * x[2] + d * x[3]
-
-#         popt, _ = curve_fit(model_func, sensor_readings.T, actual_weights)
-#         self.model = lambda x: model_func(x, *popt)
-
-#     def predict(self, sensor_readings):
-#         if self.model is None:
-#             raise ValueError("Model not trained. Call train() first.")
-#         return self.model(sensor_readings)
-
-#     def save_model(self, filename):
-#         if self.model is None:
-#             raise ValueError("Model not trained. Nothing to save.")
-#         np.save(filename, self.model)
-
-#     def load_model(self, filename):
-#         self.model = np.load(filename, allow_pickle=True).item()
-
-# def main():
-#     # Example usage
-#     predictor = WeightPredictor()
-
-#     # Generate some example data
-#     sensor_readings = np.random.rand(100, 4) * 1000  # 100 samples, 4 sensors
-#     actual_weights = np.sum(sensor_readings, axis=1) + np.random.randn(100) * 10  # Add some noise
-
-#     # Train the model
-#     predictor.train(sensor_readings, actual_weights)
-
-#     # Make a prediction
-#     new_reading = np.array([250, 300, 275, 225])
-#     predicted_weight = predictor.predict(new_reading)
-#     print(f"Predicted weight: {predicted_weight:.2f} grams")
-
-#     # Save and load the model
-#     predictor.save_model('weight_model.npy')
-#     predictor.load_model('weight_model.npy')
-
-# if __name__ == "__main__":
-#     main()
