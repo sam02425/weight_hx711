@@ -1,43 +1,34 @@
-import RPi.GPIO as GPIO
 import time
-import numpy as np
+import RPi.GPIO as GPIO
 import logging
-from logging.handlers import RotatingFileHandler
 
 def setup_logging():
-    logger = logging.getLogger('weight_sensing_system')
-    logger.setLevel(logging.DEBUG)
-    handler = RotatingFileHandler('weight_sensing_system.log', maxBytes=10000000, backupCount=5)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    return logger
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    return logging.getLogger('weight_sensing_system')
 
 logger = setup_logging()
 
 def setup_gpio():
-    try:
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setwarnings(False)
-        logger.info("GPIO setup completed")
-    except Exception as e:
-        logger.error(f"Error setting up GPIO: {e}")
-        raise
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
 
 def get_stable_reading(hx, num_readings=10, delay=0.1):
     readings = []
-    try:
-        for _ in range(num_readings):
-            readings.append(hx.get_weight(5))
-            time.sleep(delay)
-        stable_reading = np.median(readings)
-        logger.debug(f"Stable reading: {stable_reading}")
-        return stable_reading
-    except Exception as e:
-        logger.error(f"Error getting stable reading: {e}")
-        raise
+    for _ in range(num_readings):
+        try:
+            value = hx.get_weight(5)
+            if value != 0:  # Avoid adding zero readings
+                readings.append(value)
+        except Exception as e:
+            logger.error(f"Error in individual reading: {e}")
+        time.sleep(delay)
+    
+    if not readings:
+        logger.warning("No valid readings obtained")
+        return 0
+    
+    return sum(readings) / len(readings)
 
 def graceful_shutdown():
-    logger.info("Initiating graceful shutdown")
     GPIO.cleanup()
-    logger.info("GPIO cleanup completed")
+    logger.info("GPIO cleaned up")
